@@ -23,7 +23,7 @@ if __name__ == '__main__':
     batch_size = 64
     num_epochs = 30
     maxlen = 100
-    mode = 'sample'
+    mode = 'train'
     start_chars = ''
 
     model = RNNmodel(vocab_size=vocab_size,
