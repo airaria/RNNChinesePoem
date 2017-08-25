@@ -1,7 +1,9 @@
 # RNNChinesePoem
 
 A RNN-based LM model trained on quan_tang_shi.txt dataset, which can be used to generate poems.
+
 The ckpt files are saved to save_model/.
+
 the tensorboard's graph files are saved to graphs/.
 
 ## Requirements
@@ -20,4 +22,5 @@ TODO:
 
 ## Acknowledgements
 quan_tang_shi.txt 来自 hx364/Chinese_Poem_RNN.
+
 Inspired by wzyonggege/RNN_poetry_generator and hzy46/Char-RNN-tensorflow.
