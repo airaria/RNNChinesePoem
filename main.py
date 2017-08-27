@@ -7,7 +7,7 @@ from Model import RNNmodel
 
 if __name__ == '__main__':
     sess = get_session()
-    poemdata = dataLoader()
+    poemdata = dataLoader(yan=5)
 
     vocab_size = len(poemdata.id2c)
     embedding_size = 256
@@ -45,8 +45,5 @@ if __name__ == '__main__':
 
     elif mode == 'sample':
         start_chars = SOS + start_chars
-        stop_code = encode(EOS,poemdata.c2id)[0]
-        start_codes = encode(start_chars,poemdata.c2id)
-        poems_codes = model.sample(sess,start_codes,stop_code,save_dir,nb_poem=10)
-        poems = [''.join(decode(poem_codes,poemdata.id2c)) for poem_codes in poems_codes]
+        poems = model.sample(sess,start_chars,EOS,poemdata,save_dir,nb_poem=10)
         print ('\n'.join(poems))

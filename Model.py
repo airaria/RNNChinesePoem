@@ -19,6 +19,8 @@ class RNNmodel(object):
                 self.x = tf.placeholder(dtype=tf.int32,shape=(None,None),name='input')
                 self.y = tf.placeholder(dtype=tf.int32,shape=(None,None),name='target')
                 self.xl = tf.placeholder(dtype=tf.int32,shape=(None,),name='length')
+                self.xyun = tf.placeholder(dtype=tf.float32,shape=(None,None,3),name='input_yun')
+
                 self.dropout_rate = tf.placeholder(tf.float32,shape=(),name='dropout_rate')
 
             batch_size = tf.shape(self.x)[0]
@@ -30,6 +32,9 @@ class RNNmodel(object):
                         "embeddingTable",[vocab_size,embedding_size],dtype=tf.float32)
                     self.embedded_x = tf.nn.embedding_lookup(self.embeddings,self.x)
 
+            with tf.variable_scope("concat"):
+                pre_inputs = tf.concat([self.embedded_x,self.xyun],axis=2)
+
             rnn = create_rnn_cell(num_units=rnn_units,
                                       num_layers=rnn_layers,
                                       forget_bias=1,
@@ -37,7 +42,7 @@ class RNNmodel(object):
             self.initial_state = rnn.zero_state(batch_size,tf.float32)
             outputs, self.final_state = tf.nn.dynamic_rnn(
                 rnn,
-                self.embedded_x,
+                pre_inputs,
                 sequence_length=self.xl,
                 initial_state= self.initial_state)
 
@@ -64,11 +69,14 @@ class RNNmodel(object):
                 name='flat_loss'
             )
             self.loss = tf.reduce_mean(flat_loss,name="scalarloss")
+
     def build_train_op(self):
         tvars = tf.trainable_variables()
         grads,_ = tf.clip_by_global_norm(tf.gradients(self.loss,tvars),tf.constant(self.grad_clip,dtype=tf.float32))
         optimizer = tf.train.AdamOptimizer(self.learning_rate)
         self.train_op = optimizer.apply_gradients(zip(grads,tvars))
+
+
     def train(self,sess,dataset,
               log_every_n,
               save_every_n,
@@ -80,10 +88,10 @@ class RNNmodel(object):
               maxlen=None):
         sess.run(self.initialize)
         step = 0
-        for X_data,y_data,X_len in dataset(is_fixed_length,batch_size,num_epochs,maxlen):
+        for X_data,y_data,X_len,X_yun in dataset(is_fixed_length,batch_size,num_epochs,maxlen):
             step += 1
             train_loss,_ = sess.run([self.loss,self.train_op],feed_dict={
-                self.x:X_data,self.y:y_data,self.xl:X_len,self.dropout_rate:self.dropout})
+                self.x:X_data,self.y:y_data,self.xl:X_len,self.xyun:X_yun,self.dropout_rate:self.dropout})
 
             if step % log_every_n ==0:
                 print ('{}/{} in {}/{}  loss: {:.4f}'\
@@ -92,43 +100,48 @@ class RNNmodel(object):
                                dataset.nb_epoch,train_loss))
 
             if step % sample_every_n == 0:
-                a_sample = self.sample(sess,encode([SOS],dataset.c2id),dataset.c2id[EOS])[0]
-                print ("".join(decode(a_sample,dataset.id2c)))
+                a_sample = self.sample(sess,SOS,EOS,dataset)[0]
+                print (a_sample)
 
             if step % save_every_n==0:
                 self.saver.save(sess,os.path.join(save_dir,'model'),global_step=step)
         self.saver.save(sess,os.path.join(save_dir,'model'),global_step=step)
 
-    def sample(self,sess,start_codes,stop_code,save_dir=None,nb_poem=1):
+    def sample(self,sess,start_words,stop_symbol,dataset,save_dir=None,nb_poem=1):
+        start_codes = encode(start_words,dataset.c2id)
+        stop_code = dataset.c2id[stop_symbol]
         if not save_dir is None:
             model_file = tf.train.latest_checkpoint(save_dir)
             print(model_file)
             self.saver.restore(sess,model_file)
 
-        poems = []
+        x = np.zeros((1, 1))
+        xyun = np.zeros((1, 1, 3),dtype=np.float32)
+        state = sess.run(self.initial_state, feed_dict={self.x: np.zeros((1, 1)), self.xl: [1]})
+
+        poems_codes = []
         for pt in range(nb_poem):
-            poem = start_codes[:]
-            state = sess.run(self.initial_state,feed_dict={self.x:np.zeros((1,1)),self.xl:[1]})
-            last_word = stop_code
+            poem_codes = start_codes[:]
+            last_code = stop_code
             for c in start_codes:
-                x = np.zeros((1,1))
                 x[0,0] = c
+                xyun[0] = encode_yun(dataset.id2c[c],dataset.yun_dict)
                 probs, state = sess.run([self.flat_probs,self.final_state],
-                                        feed_dict={self.x:x,self.xl:[1],
+                                        feed_dict={self.x:x,self.xl:[1],self.xyun:xyun,
                                                    self.dropout_rate:0,
                                                    self.initial_state:state})
-                last_word = sampler(probs,3) #random_choice_top_k(logits,5)
-            while last_word!=stop_code and len(poem)<100:
-                poem.append(last_word)
-                x = np.zeros((1,1))
-                x[0,0] = last_word
+                last_code = sampler(probs,3) #random_choice_top_k(logits,5)
+            while last_code!=stop_code and len(poem_codes)<100:
+                poem_codes.append(last_code)
+                x[0,0] = last_code
+                xyun[0] = encode_yun(dataset.id2c[last_code],dataset.yun_dict)
                 probs, state = sess.run([self.flat_probs,self.final_state],
-                                        feed_dict={self.x:x,self.xl:[1],
+                                        feed_dict={self.x:x,self.xl:[1],self.xyun:xyun,
                                                    self.dropout_rate:0,
                                                    self.initial_state:state})
-                last_word = sampler(probs,3)
-            poems.append(poem)
-        return poems
+                last_code = sampler(probs,3)
+            poems_codes.append(decode(poem_codes,dataset.id2c))
+        return poems_codes
 
     def save_graph(self,sess):
         writer = tf.summary.FileWriter('./graphs',sess.graph)
