@@ -9,6 +9,7 @@ the tensorboard's graph files are saved to graphs/.
 ## 更新说明
 
 添加了平仄。
+添加了NCE loss.
 
 ## Requirements
 - python 3.X
