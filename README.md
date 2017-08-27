@@ -6,6 +6,10 @@ The ckpt files are saved to save_model/.
 
 the tensorboard's graph files are saved to graphs/.
 
+## 更新说明
+
+添加了平仄。
+
 ## Requirements
 - python 3.X
 - Tensorflow >= 1.2
@@ -14,7 +18,7 @@ TODO。
 目前参数写在main.py里。修改后直接运行python main.py 即可。
 
 TODO:
-- add tones.
+- add tones. Done.
 - add rhymes.
 - add attention mechanism.
 
