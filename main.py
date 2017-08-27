@@ -24,6 +24,7 @@ if __name__ == '__main__':
     num_epochs = 30
     maxlen = 100
     mode = 'train'
+    loss_type='CE'
     start_chars = ''
 
     model = RNNmodel(vocab_size=vocab_size,
@@ -34,7 +35,8 @@ if __name__ == '__main__':
                      save_every_n=save_every_n,
                      log_every_n=log_every_n,
                      learning_rate=learning_rate,
-                     dropout_rate=dropout_rate)
+                     dropout_rate=dropout_rate,
+                     loss_type=loss_type)
     #model.save_graph(sess)
 
     if mode == 'train':

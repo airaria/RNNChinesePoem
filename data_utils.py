@@ -3,6 +3,7 @@ from collections import Counter,defaultdict
 from itertools import chain
 from keras.preprocessing.sequence import pad_sequences
 import re
+from copy import copy
 
 SOS = '^'
 EOS = '$'
@@ -82,15 +83,20 @@ class dataLoader(object):
     def build_vocabulary(self,poems,th=10):
         vocab = Counter(chain(*poems))
         rares = list(filter(lambda x:x[1]<th, vocab.most_common()))
-        c2id = {v[0]:k for k,v in enumerate(vocab.most_common())}
-        unkown_id = len(vocab)-len(rares)
-        for k in rares:
-            c2id[k[0]] = unkown_id
-        id2c = {v:k for k,v in c2id.items() if v<unkown_id}
-        id2c[unkown_id] = "?"
 
-        c2id[" "] = unkown_id+1
-        id2c[unkown_id+1] =" "
+        vocab_new = copy(vocab)
+        vocab_new['?'] = sum(list(map(lambda x:x[1],rares)))
+        for k,v in rares:
+            del vocab_new[k]
+
+        c2id = {v[0]:k for k,v in enumerate(vocab_new.most_common())}
+        for k,v in vocab.items():
+            if not k in c2id:
+                c2id[k] = c2id['?']
+        id2c = {v:k for k,v in c2id.items() if k in vocab_new}
+
+        c2id[" "] = len(id2c)
+        id2c[len(id2c)] =" "
         return c2id,id2c
 
     #iterate

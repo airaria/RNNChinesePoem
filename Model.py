@@ -13,6 +13,7 @@ class RNNmodel(object):
         self.grad_clip = kwargs['grad_clip']
         self.learning_rate  = kwargs['learning_rate']
         self.dropout = kwargs['dropout_rate']
+        self.loss_type = kwargs['loss_type']
 
         with tf.variable_scope("PoemModel"):
             with tf.variable_scope("placeholders"):
@@ -40,21 +41,25 @@ class RNNmodel(object):
                                       forget_bias=1,
                                       dropout=self.dropout_rate)
             self.initial_state = rnn.zero_state(batch_size,tf.float32)
-            outputs, self.final_state = tf.nn.dynamic_rnn(
+            rnn_outputs, self.final_state = tf.nn.dynamic_rnn(
                 rnn,
                 pre_inputs,
                 sequence_length=self.xl,
                 initial_state= self.initial_state)
 
             with tf.variable_scope("afterRNN"):
-                flat_outputs = tf.reshape(outputs,shape=[-1,rnn_units])
-                self.flat_logits = tf.layers.dense(flat_outputs,vocab_size)
-                self.flat_probs = tf.nn.softmax(self.flat_logits)
+                self.rnn_outputs = tf.reshape(rnn_outputs,shape=[-1,rnn_units])
+
+                if self.loss_type=="CE":
+                    self.build_loss()
+                elif self.loss_type=="NCE":
+                    self.build_nce_loss()
+                else:
+                    raise NotImplementedError
                 #self.cubic_logits = tf.reshape(self.flat_logits,
                 #            shape=(batch_size,sample_length,vocab_size))
                 #self.cubic_prob = tf.nn.softmax(self.cubic_logits)
 
-            self.build_loss()
             self.build_train_op()
             self.initialize = tf.global_variables_initializer()
             self.saver = tf.train.Saver()
@@ -62,13 +67,33 @@ class RNNmodel(object):
 
     def build_loss(self):
         with tf.variable_scope("loss"):
+            self.logits = tf.layers.dense(self.rnn_outputs, self.vocab_size)
             flat_y = tf.reshape(self.y,shape=(-1,),name='flat_y')
-            flat_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
+            loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
                 labels = flat_y,
-                logits = self.flat_logits,
+                logits = self.logits,
                 name='flat_loss'
             )
-            self.loss = tf.reduce_mean(flat_loss,name="scalarloss")
+            self.loss = tf.reduce_mean(loss,name="scalarloss")
+            self.probs = tf.nn.softmax(self.logits)
+
+    def build_nce_loss(self):
+        with tf.variable_scope("nce_loss"):
+            nce_y = tf.reshape(self.y, shape=(-1,1), name='nce_y')
+            nce_weights = tf.Variable(tf.truncated_normal(
+                [self.vocab_size, self.rnn_units],
+                stddev=1.0 / np.sqrt(self.rnn_units)),name="nce_weights")
+            nce_biases = tf.Variable(tf.zeros([self.vocab_size]),name="nce_bias")
+            loss = tf.nn.nce_loss(weights=nce_weights,
+                               biases = nce_biases,
+                               inputs=self.rnn_outputs,
+                               labels=nce_y,
+                               num_sampled=63,
+                               num_classes=self.vocab_size)
+            self.loss = tf.reduce_mean(loss,name="scalarloss")
+            self.logits = tf.matmul(self.rnn_outputs,tf.transpose(nce_weights))+nce_biases
+            self.probs = tf.nn.softmax(self.logits)
+
 
     def build_train_op(self):
         tvars = tf.trainable_variables()
@@ -126,16 +151,16 @@ class RNNmodel(object):
             for c in start_codes:
                 x[0,0] = c
                 xyun[0] = encode_yun(dataset.id2c[c],dataset.yun_dict)
-                probs, state = sess.run([self.flat_probs,self.final_state],
+                probs, state = sess.run([self.probs,self.final_state],
                                         feed_dict={self.x:x,self.xl:[1],self.xyun:xyun,
                                                    self.dropout_rate:0,
                                                    self.initial_state:state})
-                last_code = sampler(probs,3) #random_choice_top_k(logits,5)
+                last_code = sampler(probs,3)
             while last_code!=stop_code and len(poem_codes)<100:
                 poem_codes.append(last_code)
                 x[0,0] = last_code
                 xyun[0] = encode_yun(dataset.id2c[last_code],dataset.yun_dict)
-                probs, state = sess.run([self.flat_probs,self.final_state],
+                probs, state = sess.run([self.probs,self.final_state],
                                         feed_dict={self.x:x,self.xl:[1],self.xyun:xyun,
                                                    self.dropout_rate:0,
                                                    self.initial_state:state})
