@@ -20,7 +20,7 @@ class RNNmodel(object):
                 self.x = tf.placeholder(dtype=tf.int32,shape=(None,None),name='input')
                 self.y = tf.placeholder(dtype=tf.int32,shape=(None,None),name='target')
                 self.xl = tf.placeholder(dtype=tf.int32,shape=(None,),name='length')
-                self.xyun = tf.placeholder(dtype=tf.float32,shape=(None,None,3),name='input_yun')
+                self.xpz = tf.placeholder(dtype=tf.float32, shape=(None, None, 3), name='input_pz')
 
                 self.dropout_rate = tf.placeholder(tf.float32,shape=(),name='dropout_rate')
 
@@ -34,7 +34,7 @@ class RNNmodel(object):
                     self.embedded_x = tf.nn.embedding_lookup(self.embeddings,self.x)
 
             with tf.variable_scope("concat"):
-                pre_inputs = tf.concat([self.embedded_x,self.xyun],axis=2)
+                pre_inputs = tf.concat([self.embedded_x, self.xpz], axis=2)
 
             rnn = create_rnn_cell(num_units=rnn_units,
                                       num_layers=rnn_layers,
@@ -113,10 +113,10 @@ class RNNmodel(object):
               maxlen=None):
         sess.run(self.initialize)
         step = 0
-        for X_data,y_data,X_len,X_yun in dataset(is_fixed_length,batch_size,num_epochs,maxlen):
+        for X_data,y_data,X_len,xpz in dataset(is_fixed_length,batch_size,num_epochs,maxlen):
             step += 1
-            train_loss,_ = sess.run([self.loss,self.train_op],feed_dict={
-                self.x:X_data,self.y:y_data,self.xl:X_len,self.xyun:X_yun,self.dropout_rate:self.dropout})
+            train_loss,_ = sess.run([self.loss,self.train_op], feed_dict={
+                self.x:X_data,self.y:y_data,self.xl:X_len,self.xpz:xpz,self.dropout_rate:self.dropout})
 
             if step % log_every_n ==0:
                 print ('{}/{} in {}/{}  loss: {:.4f}'\
@@ -126,7 +126,7 @@ class RNNmodel(object):
 
             if step % sample_every_n == 0:
                 a_sample = self.sample(sess,SOS,EOS,dataset)[0]
-                print (a_sample)
+                print (a_sample.strip())
 
             if step % save_every_n==0:
                 self.saver.save(sess,os.path.join(save_dir,'model'),global_step=step)
@@ -141,7 +141,7 @@ class RNNmodel(object):
             self.saver.restore(sess,model_file)
 
         x = np.zeros((1, 1))
-        xyun = np.zeros((1, 1, 3),dtype=np.float32)
+        xpz = np.zeros((1, 1, 3),dtype=np.float32)
         state = sess.run(self.initial_state, feed_dict={self.x: np.zeros((1, 1)), self.xl: [1]})
 
         poems_codes = []
@@ -150,18 +150,18 @@ class RNNmodel(object):
             last_code = stop_code
             for c in start_codes:
                 x[0,0] = c
-                xyun[0] = encode_yun(dataset.id2c[c],dataset.yun_dict)
+                xpz[0] = encode_pingze(dataset.id2c[c],dataset.yun_dict)
                 probs, state = sess.run([self.probs,self.final_state],
-                                        feed_dict={self.x:x,self.xl:[1],self.xyun:xyun,
+                                        feed_dict={self.x:x,self.xl:[1],self.xpz:xpz,
                                                    self.dropout_rate:0,
                                                    self.initial_state:state})
                 last_code = sampler(probs,3)
             while last_code!=stop_code and len(poem_codes)<100:
                 poem_codes.append(last_code)
                 x[0,0] = last_code
-                xyun[0] = encode_yun(dataset.id2c[last_code],dataset.yun_dict)
+                xpz[0] = encode_pingze(dataset.id2c[last_code],dataset.yun_dict)
                 probs, state = sess.run([self.probs,self.final_state],
-                                        feed_dict={self.x:x,self.xl:[1],self.xyun:xyun,
+                                        feed_dict={self.x:x,self.xl:[1],self.xpz:xpz,
                                                    self.dropout_rate:0,
                                                    self.initial_state:state})
                 last_code = sampler(probs,3)

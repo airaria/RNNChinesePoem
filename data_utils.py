@@ -16,11 +16,16 @@ def soft_onehot(arr,k):
 def encode(poem,c2id):
     return [c2id[c] for c in poem]
 
-def encode_yun(poem,yun_dict):
+def encode_pingze(poem,yun_dict):
     '''
     Only encode pingze now.
     '''
     return np.array([soft_onehot(list(set(yun_dict[c][0])), k=3) for c in poem])
+
+def encode_yun(poem,yun_dict):
+    num_yun =max(chain.from_iterable(map(lambda x:x[1],yun_dict.values())))+1
+    #TODO
+    return np.array([soft_onehot(list(yun_dict[c][1]),k=num_yun) for c in poem])
 
 def decode(mystery,id2c):
     return ''.join([id2c[i] for i in mystery])
@@ -34,14 +39,15 @@ class dataLoader(object):
         self.yun_dict = self.load_pingze(ping,ze)
         self.poems = self.preprocessing(raw_poems_file,yan)
 
+
         self.c2id, self.id2c = self.build_vocabulary(self.poems)
         self.encoded_poems = [encode(poem,self.c2id) for poem in self.poems]
-        self.encoded_yuns = [encode_yun(poem,self.yun_dict) for poem in self.poems]
+        self.encoded_pingze = [encode_pingze(poem,self.yun_dict) for poem in self.poems]
 
 
-        self.encoded_poems_length,self.encoded_poems,self.encoded_yuns = \
+        self.encoded_poems_length,self.encoded_poems,self.encoded_pingze = \
             zip(*sorted(
-                map(lambda i:(len(self.encoded_poems[i]),self.encoded_poems[i],self.encoded_yuns[i]),
+                map(lambda i:(len(self.encoded_poems[i]),self.encoded_poems[i],self.encoded_pingze[i]),
                     range(len(self.encoded_poems))),key=lambda triple:triple[0]))
 
 
@@ -70,10 +76,11 @@ class dataLoader(object):
                 continue
             if '_' in poem or '《' in poem or '[' in poem or '(' in poem or '（' in poem or '：' in poem or ':' in poem:
                 continue
-            line = line.replace('？','。').replace('！','。').replace(' ','')
+            line = line.replace('？','\n').replace('！','\n').replace(' ','').replace('，','\n').replace('。','\n')
             if not yan is None:
-                sline = line.replace('，','。').split('。')[:-1]
-                if list(set(map(len,sline)))!=[yan]:
+                sline = line.split('\n')[:-1]
+                aa = list(set(map(len,sline)))
+                if aa!=[yan]:
                     continue
             line = SOS+line+EOS
             poems.append(line)
@@ -108,7 +115,7 @@ class dataLoader(object):
         if is_fixed_length:
             raw = pad_sequences(self.encoded_poems, maxlen=max_length + 1,
                                 padding='post', truncating='post', value=self.c2id[' '])
-            raw_yun = pad_sequences(self.encoded_yuns,maxlen=max_length+1,
+            raw_pz = pad_sequences(self.encoded_pingze,maxlen=max_length+1,
                                 padding='post',truncating='post',value=[1.,0,0])
 
             X = raw[:, :-1]
@@ -116,8 +123,8 @@ class dataLoader(object):
             X_len = np.array(list(map(
                 lambda x: min(x, max_length), self.encoded_poems_length)))
 
-            X_yun = raw_yun[:,:-1]
-            #y_yun = raw_yun[:,1:]
+            X_pz = raw_pz[:,:-1]
+            #y_yun = raw_pz[:,1:]
 
 
             for epoch in range(1, nb_epoch + 1):
@@ -126,7 +133,7 @@ class dataLoader(object):
                 X = X[order]
                 y = y[order]
                 X_len = X_len[order]
-                X_yun = X_yun[order]
+                X_pz = X_pz[order]
                 #y_yun = y_yun[order]
 
 
@@ -134,34 +141,34 @@ class dataLoader(object):
                     yield X[i * batch_size:(i + 1) * batch_size], \
                           y[i * batch_size:(i + 1) * batch_size], \
                           X_len[i * batch_size:(i + 1) * batch_size],\
-                          X_yun[i * batch_size:(i + 1) * batch_size]
+                          X_pz[i * batch_size:(i + 1) * batch_size]
                           #y_yun[i * batch_size:(i + 1) * batch_size]
 
         else:
             X = []
             X_len = []
             y = []
-            X_yun = []
+            X_pz = []
             #y_yun = []
             for i in range(self.nb_chunk):
                 x = self.encoded_poems[i * batch_size:(i + 1) * batch_size]
                 x_len = self.encoded_poems_length[i * batch_size:(i + 1) * batch_size]
-                x_yun = self.encoded_yuns[i*batch_size:(i+1)*batch_size]
+                x_pz = self.encoded_pingze[i*batch_size:(i+1)*batch_size]
 
                 raw = pad_sequences(x, maxlen=max(x_len) + 1, padding='post',
                                     truncating='post', value=self.c2id[' '])
-                raw_yun = pad_sequences(x_yun,maxlen=max(x_len)+1,
+                raw_pz = pad_sequences(x_pz,maxlen=max(x_len)+1,
                                         padding='post',truncating='post',value=[1,0,0])
 
                 X.append(raw[:, :-1])
                 y.append(raw[:, 1:])
                 X_len.append(np.array(x_len))
-                X_yun.append(raw_yun[:,:-1])
-                #y_yun.append(raw_yun[:,1:])
+                X_pz.append(raw_pz[:,:-1])
+                #y_yun.append(raw_pz[:,1:])
 
 
             for epoch in range(1, nb_epoch + 1):
                 self.current_epoch = epoch
                 order = np.random.permutation(self.nb_chunk)
                 for i in order:
-                    yield X[i], y[i], X_len[i],X_yun[i] #,y_yun[i]
+                    yield X[i], y[i], X_len[i],X_pz[i] #,y_yun[i]
