@@ -10,7 +10,7 @@ EOS = '$'
 
 def soft_onehot(arr,k):
     ret = np.zeros(k,dtype=np.float32)
-    ret[arr]=1./len(ret)
+    ret[arr]=1./len(arr)
     return ret
 
 def encode(poem,c2id):
@@ -22,10 +22,12 @@ def encode_pingze(poem,yun_dict):
     '''
     return np.array([soft_onehot(list(set(yun_dict[c][0])), k=3) for c in poem])
 
-def encode_yun(poem,yun_dict):
-    num_yun =max(chain.from_iterable(map(lambda x:x[1],yun_dict.values())))+1
-    #TODO
-    return np.array([soft_onehot(list(yun_dict[c][1]),k=num_yun) for c in poem])
+def encode_yun(poem,yun_dict,num_yun):
+    return np.array([yun_dict['^'][1][0]]
+                    +[yun_dict[poem[i-1]][1][0] for i in range(len(poem)) if poem[i]=='\n']
+                    +[yun_dict['$'][1][0]])
+    #return np.array([soft_onehot(list(yun_dict[poem[i-1]][1]),k=num_yun) for i in range(len(poem)) if poem[i]=='\n'])
+
 
 def decode(mystery,id2c):
     return ''.join([id2c[i] for i in mystery])
@@ -43,11 +45,14 @@ class dataLoader(object):
         self.c2id, self.id2c = self.build_vocabulary(self.poems)
         self.encoded_poems = [encode(poem,self.c2id) for poem in self.poems]
         self.encoded_pingze = [encode_pingze(poem,self.yun_dict) for poem in self.poems]
+        num_yun = max(chain.from_iterable(map(lambda x: x[1], self.yun_dict.values()))) + 1
+        self.encoded_yun = [encode_yun(poem,self.yun_dict,num_yun) for poem in self.poems]
 
-
-        self.encoded_poems_length,self.encoded_poems,self.encoded_pingze = \
+        self.encoded_poems_length,self.encoded_poems,\
+        self.encoded_pingze, self.encoded_yun,self.encoded_yun_length = \
             zip(*sorted(
-                map(lambda i:(len(self.encoded_poems[i]),self.encoded_poems[i],self.encoded_pingze[i]),
+                map(lambda i:(len(self.encoded_poems[i]),self.encoded_poems[i],
+                              self.encoded_pingze[i],self.encoded_yun[i],len(self.encoded_yun[i])),
                     range(len(self.encoded_poems))),key=lambda triple:triple[0]))
 
 
@@ -61,9 +66,11 @@ class dataLoader(object):
         with open(ze,'r',encoding='utf8') as file_ze:
             for iz,line in enumerate(file_ze):
                 for c in line.strip():
-                    yun_dict[c].append((2,iz+ip+1))
+                    yun_dict[c].append((2,iz+1+ip+1))
         for k,v in yun_dict.items():
             yun_dict[k] = tuple(zip(*v))
+        yun_dict['^'] = ((0,),(iz+ip+3,))
+        yun_dict['$'] = ((0,),(iz+ip+4,))
         yun_dict.default_factory = lambda :((0,),(0,))
         return yun_dict
 
