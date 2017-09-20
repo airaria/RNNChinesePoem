@@ -8,6 +8,7 @@ class RNNmodel(object):
     def __init__(self,**kwargs):
         self.vocab_size = vocab_size = kwargs['vocab_size']
         self.embedding_size= embedding_size = kwargs['embedding_size']
+        self.embedding_yun_size = embedding_yun_size = kwargs['embedding_yun_size']
         self.rnn_units = rnn_units = kwargs['rnn_units']
         self.rnn_layers = rnn_layers = kwargs['rnn_layers']
         self.grad_clip = kwargs['grad_clip']
@@ -21,20 +22,23 @@ class RNNmodel(object):
                 self.y = tf.placeholder(dtype=tf.int32,shape=(None,None),name='target')
                 self.xl = tf.placeholder(dtype=tf.int32,shape=(None,),name='length')
                 self.xpz = tf.placeholder(dtype=tf.float32, shape=(None, None, 3), name='input_pz')
+                self.xyun = tf.placeholder(dtype=tf.int32,shape=(None,None),name='input_yun')
 
                 self.dropout_rate = tf.placeholder(tf.float32,shape=(),name='dropout_rate')
 
             batch_size = tf.shape(self.x)[0]
-            sample_length = tf.shape(self.x)[1]
 
             with tf.variable_scope("embedding"):
                 with tf.device("/cpu:0"):
                     self.embeddings = tf.get_variable(
                         "embeddingTable",[vocab_size,embedding_size],dtype=tf.float32)
                     self.embedded_x = tf.nn.embedding_lookup(self.embeddings,self.x)
+                    self.embeddings2 = tf.get_variable(
+                        "embeddingTable2",[vocab_size,embedding_yun_size],dtype=tf.float32)
+                    self.embedded_xyun = tf.nn.embedding_lookup(self.embeddings2,self.xyun)
 
             with tf.variable_scope("concat"):
-                pre_inputs = tf.concat([self.embedded_x, self.xpz], axis=2)
+                pre_inputs = tf.concat([self.embedded_x, self.xpz],axis=2)#,self.embedded_xyun], axis=2)
 
             rnn = create_rnn_cell(num_units=rnn_units,
                                       num_layers=rnn_layers,
@@ -113,10 +117,10 @@ class RNNmodel(object):
               maxlen=None):
         sess.run(self.initialize)
         step = 0
-        for X_data,y_data,X_len,xpz in dataset(is_fixed_length,batch_size,num_epochs,maxlen):
+        for X_data,y_data,X_len,xpz,xyun in dataset(is_fixed_length,batch_size,num_epochs,maxlen):
             step += 1
             train_loss,_ = sess.run([self.loss,self.train_op], feed_dict={
-                self.x:X_data,self.y:y_data,self.xl:X_len,self.xpz:xpz,self.dropout_rate:self.dropout})
+                self.x:X_data,self.y:y_data,self.xl:X_len,self.xpz:xpz,self.xyun:xyun,self.dropout_rate:self.dropout})
 
             if step % log_every_n ==0:
                 print ('{}/{} in {}/{}  loss: {:.4f}'\
@@ -142,7 +146,10 @@ class RNNmodel(object):
 
         x = np.zeros((1, 1))
         xpz = np.zeros((1, 1, 3),dtype=np.float32)
-        state = sess.run(self.initial_state, feed_dict={self.x: np.zeros((1, 1)), self.xl: [1]})
+        xyun = np.zeros((1,1))
+        state = sess.run(self.initial_state, feed_dict={self.x: x,
+                                                        self.xl: [1],
+                                                        self.xyun:xyun})
 
         poems_codes = []
         for pt in range(nb_poem):
@@ -151,8 +158,9 @@ class RNNmodel(object):
             for c in start_codes:
                 x[0,0] = c
                 xpz[0] = encode_pingze(dataset.id2c[c],dataset.yun_dict)
+                xyun[0] = encode_yun(dataset.id2c[c],dataset.yun_dict)
                 probs, state = sess.run([self.probs,self.final_state],
-                                        feed_dict={self.x:x,self.xl:[1],self.xpz:xpz,
+                                        feed_dict={self.x:x,self.xl:[1],self.xpz:xpz,self.xyun:xyun,
                                                    self.dropout_rate:0,
                                                    self.initial_state:state})
                 last_code = sampler(probs,3)
@@ -160,8 +168,9 @@ class RNNmodel(object):
                 poem_codes.append(last_code)
                 x[0,0] = last_code
                 xpz[0] = encode_pingze(dataset.id2c[last_code],dataset.yun_dict)
+                xyun[0] = encode_yun(dataset.id2c[last_code],dataset.yun_dict)
                 probs, state = sess.run([self.probs,self.final_state],
-                                        feed_dict={self.x:x,self.xl:[1],self.xpz:xpz,
+                                        feed_dict={self.x:x,self.xl:[1],self.xpz:xpz,self.xyun:xyun,
                                                    self.dropout_rate:0,
                                                    self.initial_state:state})
                 last_code = sampler(probs,3)

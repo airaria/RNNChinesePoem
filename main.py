@@ -11,6 +11,7 @@ if __name__ == '__main__':
 
     vocab_size = len(poemdata.id2c)
     embedding_size = 256
+    embedding_yun_size = 80
     rnn_units = 128
     rnn_layers = 2
     grad_clip = 10
@@ -28,7 +29,7 @@ if __name__ == '__main__':
     start_chars = ''
 
     model = RNNmodel(vocab_size=vocab_size,
-                     embedding_size=embedding_size,
+                     embedding_size=embedding_size,embedding_yun_size = embedding_yun_size,
                      rnn_units=rnn_units,
                      rnn_layers=rnn_layers,
                      grad_clip=grad_clip,
